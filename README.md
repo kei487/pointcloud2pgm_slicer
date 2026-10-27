@@ -46,7 +46,9 @@ python3 pointcloud2pgm_slicer/main.py <input_file.pcd> <output_directory>
 ## **GUIの操作**
    プログラム起動後、ウィンドウが表示されます。
    - **Min Z / Max Z スライダーおよび数値入力**: 点群データ内のz軸の抽出範囲を設定します。
+   - **Rotation (Roll / Pitch / Yaw)**: 点群の重心まわりに回転を適用します（単位: 度）。地図の向き合わせには主に Yaw (Z) を使用します。
    - **Reset ボタン**: z軸の設定を全範囲にリセットします。
+   - **Reset Rotation ボタン**: 回転角をすべて 0 に戻します。
    - **Set Output File Name ボタン**: 出力PGMファイルのファイル名を変更します。
    - **Set Resolution ボタン**: 1ピクセルあたりの実空間距離（m/px）を設定します。
    - **Convert to PGM ボタン**: 現在の設定に基づき、点群データをPGM画像およびYAMLファイルに変換して出力します。
@@ -63,4 +65,18 @@ python3 pointcloud2pgm_slicer/main.py <input_file.pcd> <output_directory>
     - 未満の場合は未占有
 
 ## ライセンス
-[Apache License 2.0](LICENSE)
+Copyright 2025 Ryo Funai
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+詳細は [LICENSE](LICENSE) を参照してください。

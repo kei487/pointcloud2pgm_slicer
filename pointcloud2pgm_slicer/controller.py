@@ -40,7 +40,11 @@ class PointCloudController:
         self.view.zmin_slider.valueChanged.connect(self.on_zmin_slider_changed)
         self.view.zmax_spin.valueChanged.connect(self.on_zmax_changed)
         self.view.zmax_slider.valueChanged.connect(self.on_zmax_slider_changed)
+        self.view.roll_spin.valueChanged.connect(self.on_rotation_changed)
+        self.view.pitch_spin.valueChanged.connect(self.on_rotation_changed)
+        self.view.yaw_spin.valueChanged.connect(self.on_rotation_changed)
         self.view.reset_button.clicked.connect(self.on_reset)
+        self.view.reset_rotation_button.clicked.connect(self.on_reset_rotation)
         self.view.convert_button.clicked.connect(self.on_convert)
         self.view.set_output_filename_button.clicked.connect(self.on_set_output_filename)
         self.view.set_resolution_button.clicked.connect(self.on_set_resolution)
@@ -52,53 +56,82 @@ class PointCloudController:
             QtWidgets.QMessageBox.critical(self.view, "Error", str(e))
             sys.exit(1)
 
+        self._sync_z_controls()
+        self._sync_rotation_controls()
+
+        # 初期表示：モデルの全点群データを描画
+        self._redraw_point_cloud(reset_camera=True)
+
+        if hasattr(self.view, "splash") and self.view.splash:
+            self.view.splash.finish(self.view)
+        self.view.show()
+
+    def _sync_z_controls(self) -> None:
         overall_min = self.model.overall_z_min
         overall_max = self.model.overall_z_max
         current_min = self.model.current_min_z
         current_max = self.model.current_max_z
 
-        self.view.zmin_spin.setRange(overall_min, overall_max)
-        self.view.zmin_spin.setValue(current_min)
-        self.view.zmin_slider.setMinimum(int(overall_min * self.view.slider_multiplier))
-        self.view.zmin_slider.setMaximum(int(overall_max * self.view.slider_multiplier))
-        self.view.zmin_slider.setValue(int(current_min * self.view.slider_multiplier))
+        for spin in (self.view.zmin_spin, self.view.zmax_spin):
+            spin.blockSignals(True)
+            spin.setRange(overall_min, overall_max)
+            spin.blockSignals(False)
+        for slider in (self.view.zmin_slider, self.view.zmax_slider):
+            slider.blockSignals(True)
+            slider.setMinimum(int(overall_min * self.view.slider_multiplier))
+            slider.setMaximum(int(overall_max * self.view.slider_multiplier))
+            slider.blockSignals(False)
 
-        self.view.zmax_spin.setRange(overall_min, overall_max)
-        self.view.zmax_spin.setValue(current_max)
-        self.view.zmax_slider.setMinimum(int(overall_min * self.view.slider_multiplier))
-        self.view.zmax_slider.setMaximum(int(overall_max * self.view.slider_multiplier))
-        self.view.zmax_slider.setValue(int(current_max * self.view.slider_multiplier))
+        self.view.update_spin_value(self.view.zmin_spin, current_min)
+        self.view.update_spin_value(self.view.zmax_spin, current_max)
+        self.view.update_slider_value(self.view.zmin_slider, current_min)
+        self.view.update_slider_value(self.view.zmax_slider, current_max)
 
-        # 初期表示：モデルの全点群データを描画
-        full_poly = self.model.display_cloud
-        self.view.plotter.clear()
-        self.view.actor = self.view.plotter.add_mesh(
-            full_poly,
-            scalars="z",
-            cmap="nipy_spectral",
-            point_size=2,
-            render_points_as_spheres=False,
-            show_scalar_bar=True,
-            scalar_bar_args={
-                "title": "Z Value",
-                "vertical": True,
-                "position_x": 0.9,
-                "position_y": 0.1,
-                "width": 0.02,
-                "height": 0.8,
-                "title_font_size": 14,
-                "label_font_size": 12,
-            },
-            reset_camera=True
+    def _sync_rotation_controls(self) -> None:
+        for spin, value in (
+            (self.view.roll_spin, self.model.roll_deg),
+            (self.view.pitch_spin, self.model.pitch_deg),
+            (self.view.yaw_spin, self.model.yaw_deg),
+        ):
+            spin.blockSignals(True)
+            spin.setValue(value)
+            spin.blockSignals(False)
+        self.view.rotation_label.setText(
+            "Rotation: R{:.1f}  P{:.1f}  Y{:.1f} [deg]".format(
+                self.model.roll_deg, self.model.pitch_deg, self.model.yaw_deg
+            )
         )
-        self.view.cloud_mesh = full_poly
-        self.view.plotter.reset_camera()
+
+    def _redraw_point_cloud(self, reset_camera: bool = False) -> None:
+        full_poly = self.model.get_polydata(self.model.current_min_z, self.model.current_max_z)
+        self.view.plotter.clear()
+        self.view.actor = None
+        self.view.cloud_mesh = None
+        if full_poly is not None:
+            self.view.actor = self.view.plotter.add_mesh(
+                full_poly,
+                scalars="z",
+                cmap="nipy_spectral",
+                point_size=2,
+                render_points_as_spheres=False,
+                show_scalar_bar=True,
+                scalar_bar_args={
+                    "title": "Z Value",
+                    "vertical": True,
+                    "position_x": 0.9,
+                    "position_y": 0.1,
+                    "width": 0.02,
+                    "height": 0.8,
+                    "title_font_size": 14,
+                    "label_font_size": 12,
+                },
+                reset_camera=reset_camera,
+            )
+            self.view.cloud_mesh = full_poly
+        if reset_camera:
+            self.view.plotter.reset_camera()
         self.view.plotter.show_axes()
         self.view.plotter.render()
-
-        if hasattr(self.view, "splash") and self.view.splash:
-            self.view.splash.finish(self.view)
-        self.view.show()
 
     def on_point_cloud_error(self, error_msg: str) -> None:
         QtWidgets.QMessageBox.critical(self.view, "Error", f"点群データの読み込みに失敗しました:\n{error_msg}")
@@ -142,6 +175,26 @@ class PointCloudController:
         self.view.update_slider_value(self.view.zmin_slider, self.model.current_min_z)
         self.view.update_slider_value(self.view.zmax_slider, self.model.current_max_z)
         self.update_timer.start(self.timer_interval)
+
+    def on_rotation_changed(self, _value: float = 0.0) -> None:
+        try:
+            self.model.set_rotation(
+                self.view.roll_spin.value(),
+                self.view.pitch_spin.value(),
+                self.view.yaw_spin.value(),
+            )
+        except ValueError as e:
+            QtWidgets.QMessageBox.critical(self.view, "Error", str(e))
+            return
+        self._sync_z_controls()
+        self._sync_rotation_controls()
+        self._redraw_point_cloud(reset_camera=False)
+
+    def on_reset_rotation(self) -> None:
+        self.model.set_rotation(0.0, 0.0, 0.0)
+        self._sync_z_controls()
+        self._sync_rotation_controls()
+        self._redraw_point_cloud(reset_camera=False)
 
     def update_filter(self) -> None:
         polydata = self.model.get_polydata(self.model.current_min_z, self.model.current_max_z)

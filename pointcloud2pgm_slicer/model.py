@@ -19,6 +19,11 @@ class IPointCloudModel(ABC):
         pass
 
     @abstractmethod
+    def set_rotation(self, roll_deg: float, pitch_deg: float, yaw_deg: float) -> None:
+        """点群の回転角（度）を設定し、重心まわりに適用する"""
+        pass
+
+    @abstractmethod
     def get_polydata(self, min_z: float, max_z: float) -> Optional[pv.PolyData]:
         """指定Z範囲におけるフィルタ済みの描画用PolyDataを返す"""
         pass
@@ -43,6 +48,10 @@ class PointCloudModel(IPointCloudModel):
         # 生データ（PGM変換用）
         self.raw_points: Optional[np.ndarray] = None
         self.raw_z: Optional[np.ndarray] = None
+        # 回転前のオリジナル点群
+        self.original_raw_points: Optional[np.ndarray] = None
+        self.original_display_points: Optional[np.ndarray] = None
+        self.centroid: Optional[np.ndarray] = None
         # 描画用（ダウンサンプリング済み）
         self.display_cloud: Optional[pv.PolyData] = None
 
@@ -51,25 +60,70 @@ class PointCloudModel(IPointCloudModel):
         self.current_min_z: Optional[float] = None
         self.current_max_z: Optional[float] = None
 
+        self.roll_deg: float = 0.0
+        self.pitch_deg: float = 0.0
+        self.yaw_deg: float = 0.0
+
     def set_point_cloud_data(self, pcd: o3d.geometry.PointCloud) -> None:
-        self.raw_points = np.asarray(pcd.points)
-        if self.raw_points.size == 0:
+        points = np.asarray(pcd.points)
+        if points.size == 0:
             raise ValueError("生の点群が存在しません。")
-        self.raw_z = self.raw_points[:, 2]
-        self.overall_z_min = float(np.min(self.raw_z))
-        self.overall_z_max = float(np.max(self.raw_z))
-        self.current_min_z = self.overall_z_min
-        self.current_max_z = self.overall_z_max
+        self.original_raw_points = points.copy()
+        self.centroid = np.mean(self.original_raw_points, axis=0)
 
         # ダウンサンプリング
         pcd_down = pcd.voxel_down_sample(VOXEL_SIZE)
         down_points = np.asarray(pcd_down.points)
-        if down_points.size == 0:
+        self.original_display_points = down_points.copy() if down_points.size > 0 else None
+
+        self.roll_deg = 0.0
+        self.pitch_deg = 0.0
+        self.yaw_deg = 0.0
+        self._apply_current_rotation(preserve_z_range=False)
+
+    def set_rotation(self, roll_deg: float, pitch_deg: float, yaw_deg: float) -> None:
+        if self.original_raw_points is None or self.centroid is None:
+            raise ValueError("生の点群データが未初期化です。")
+        self.roll_deg = float(roll_deg)
+        self.pitch_deg = float(pitch_deg)
+        self.yaw_deg = float(yaw_deg)
+        self._apply_current_rotation(preserve_z_range=True)
+
+    def _rotation_matrix(self) -> np.ndarray:
+        """ロール・ピッチ・ヨー（度）から回転行列を生成する（XYZ順）。"""
+        roll = np.deg2rad(self.roll_deg)
+        pitch = np.deg2rad(self.pitch_deg)
+        yaw = np.deg2rad(self.yaw_deg)
+        return o3d.geometry.get_rotation_matrix_from_xyz((roll, pitch, yaw))
+
+    def _transform_points(self, points: np.ndarray, rotation: np.ndarray) -> np.ndarray:
+        centered = points - self.centroid
+        return centered @ rotation.T + self.centroid
+
+    def _apply_current_rotation(self, preserve_z_range: bool) -> None:
+        rotation = self._rotation_matrix()
+        self.raw_points = self._transform_points(self.original_raw_points, rotation)
+        self.raw_z = self.raw_points[:, 2]
+        self.overall_z_min = float(np.min(self.raw_z))
+        self.overall_z_max = float(np.max(self.raw_z))
+
+        if not preserve_z_range:
+            self.current_min_z = self.overall_z_min
+            self.current_max_z = self.overall_z_max
+        else:
+            # 回転後のZ範囲に収まるよう、現在の抽出範囲をクランプ
+            self.current_min_z = float(np.clip(self.current_min_z, self.overall_z_min, self.overall_z_max))
+            self.current_max_z = float(np.clip(self.current_max_z, self.overall_z_min, self.overall_z_max))
+            if self.current_min_z > self.current_max_z:
+                self.current_min_z = self.overall_z_min
+                self.current_max_z = self.overall_z_max
+
+        if self.original_display_points is None or self.original_display_points.size == 0:
             self.display_cloud = None
         else:
-            down_z = down_points[:, 2]
-            self.display_cloud = pv.PolyData(down_points)
-            self.display_cloud["z"] = down_z
+            display_points = self._transform_points(self.original_display_points, rotation)
+            self.display_cloud = pv.PolyData(display_points)
+            self.display_cloud["z"] = display_points[:, 2]
 
     def get_polydata(self, min_z: float, max_z: float) -> Optional[pv.PolyData]:
         # 描画用のダウンサンプリング済みデータからフィルタ

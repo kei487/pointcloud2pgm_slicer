@@ -61,3 +61,27 @@ def test_convert_to_pgm(tmp_path, sample_point_cloud):
     with open(pgm_path, "r") as f:
         header = f.readline().strip()
     assert header == "P2"
+
+def test_set_rotation_yaw(sample_point_cloud):
+    model = PointCloudModel()
+    model.set_point_cloud_data(sample_point_cloud)
+    original = model.raw_points.copy()
+    centroid = model.centroid.copy()
+
+    model.set_rotation(0.0, 0.0, 90.0)
+    assert model.yaw_deg == 90.0
+    # 重心は回転しても変わらない
+    np.testing.assert_allclose(np.mean(model.raw_points, axis=0), centroid, atol=1e-6)
+    # Z軸周りの90度回転では各点のZは不変
+    np.testing.assert_allclose(model.raw_points[:, 2], original[:, 2], atol=1e-6)
+    # 元に戻せる
+    model.set_rotation(0.0, 0.0, 0.0)
+    np.testing.assert_allclose(model.raw_points, original, atol=1e-6)
+
+def test_set_rotation_updates_display_cloud(sample_point_cloud):
+    model = PointCloudModel()
+    model.set_point_cloud_data(sample_point_cloud)
+    model.set_rotation(0.0, 0.0, 45.0)
+    assert model.display_cloud is not None
+    assert "z" in model.display_cloud.array_names
+    assert model.display_cloud.n_points > 0

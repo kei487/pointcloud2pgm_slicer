@@ -47,8 +47,12 @@ class PointCloudView(QtWidgets.QMainWindow, IPointCloudView, metaclass=MetaQWidg
         self.zmin_slider = None
         self.zmax_spin = None
         self.zmax_slider = None
+        self.roll_spin = None
+        self.pitch_spin = None
+        self.yaw_spin = None
         self.output_file_label = None
         self.resolution_label = None
+        self.rotation_label = None
 
         # PyVista描画エリアのセットアップ
         self.plotter = QtInteractor(self)
@@ -96,22 +100,46 @@ class PointCloudView(QtWidgets.QMainWindow, IPointCloudView, metaclass=MetaQWidg
 
         layout.addWidget(sliders_container)
 
+        # 回転コントロール（重心まわり、度単位）
+        rotation_group = QtWidgets.QGroupBox("Rotation [deg]")
+        rotation_layout = QtWidgets.QFormLayout(rotation_group)
+        self.roll_spin = self._create_angle_spin()
+        self.pitch_spin = self._create_angle_spin()
+        self.yaw_spin = self._create_angle_spin()
+        rotation_layout.addRow("Roll (X):", self.roll_spin)
+        rotation_layout.addRow("Pitch (Y):", self.pitch_spin)
+        rotation_layout.addRow("Yaw (Z):", self.yaw_spin)
+        layout.addWidget(rotation_group)
+
         # ボタン群の作成
         self.reset_button = self._create_button("Reset")
+        self.reset_rotation_button = self._create_button("Reset Rotation")
         self.convert_button = self._create_button("Convert to PGM")
         self.set_output_filename_button = self._create_button("Set Output File Name")
         self.set_resolution_button = self._create_button("Set Resolution[m/px]")
 
         layout.addWidget(self.reset_button)
+        layout.addWidget(self.reset_rotation_button)
         layout.addWidget(self.convert_button)
         layout.addWidget(self.set_output_filename_button)
         layout.addWidget(self.set_resolution_button)
 
         self.output_file_label = QtWidgets.QLabel("Output File Name: " + self.user_output_filename)
         self.resolution_label = QtWidgets.QLabel("Resolution: {:.3f} [m/px]".format(self.user_resolution))
+        self.rotation_label = QtWidgets.QLabel("Rotation: R0.0  P0.0  Y0.0 [deg]")
         layout.addWidget(self.output_file_label)
         layout.addWidget(self.resolution_label)
+        layout.addWidget(self.rotation_label)
         layout.addStretch()
+
+    def _create_angle_spin(self) -> QtWidgets.QDoubleSpinBox:
+        spin = QtWidgets.QDoubleSpinBox()
+        spin.setRange(-180.0, 180.0)
+        spin.setDecimals(1)
+        spin.setSingleStep(1.0)
+        spin.setValue(0.0)
+        spin.setSuffix(" °")
+        return spin
 
     def _create_slider_control(self, min_val: float, max_val: float, initial_val: float):
         container = QtWidgets.QWidget()
